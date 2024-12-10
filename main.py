@@ -7,12 +7,6 @@ import mysql.connector
 app = FastAPI()
 
 # Modelos de dados
-class Autor(BaseModel):
-    id: int
-    nome: str
-    data_nascimento: Optional[str] = None
-    nacionalidade: Optional[str] = None
-
 class Livro(BaseModel):
     id: int
     titulo: str
@@ -20,25 +14,31 @@ class Livro(BaseModel):
     ano_publicacao: int
     genero: Optional[str] = None
 
+class Autor(BaseModel):
+    id: int
+    nome: str
+    data_nascimento: Optional[str] = None
+    nacionalidade: Optional[str] = None
 
-# Funcao de conexao
+class AutorComLivros(Autor):
+    livros: Optional[List[Livro]] = []
+
+# Função de conexão
 def conecta():
     conexao = mysql.connector.connect(
-    host ='localhost',
-    user ='result',
-    password ='res2003',
-    database = 'biblioteca'
+        host='localhost',
+        user='result',
+        password='res2003',
+        database='biblioteca'
     )
-    return conexao  
+    return conexao
 
-# Página inicial 
-
+# Página inicial
 @app.get('/')
 def index():
     return 'Minha CRUD da Biblioteca'
 
 # CRUD para Autores
-
 @app.post("/autores", response_model=Autor)
 def criar_autor(autor: Autor):
     conexao = conecta()
@@ -48,12 +48,11 @@ def criar_autor(autor: Autor):
         valores = (autor.nome, autor.data_nascimento, autor.nacionalidade)
         cursor.execute(query, valores)
         conexao.commit()
-        autor.id = cursor.lastrowid 
+        autor.id = cursor.lastrowid
         return autor
     finally:
         cursor.close()
         conexao.close()
-
 
 @app.get("/autores", response_model=List[Autor])
 def listar_autores():
@@ -68,17 +67,26 @@ def listar_autores():
         cursor.close()
         conexao.close()
 
-@app.get("/autores/{autor_id}", response_model=Autor)
+@app.get("/autores/{autor_id}", response_model=AutorComLivros)
 def buscar_autor_por_id(autor_id: int):
     conexao = conecta()
     cursor = conexao.cursor(dictionary=True)
     try:
-        query = "SELECT * FROM autores WHERE id = %s"
-        cursor.execute(query, (autor_id,))
-        resultado = cursor.fetchone()
-        if not resultado:
+        query_autor = "SELECT id, nome, data_nascimento, nacionalidade FROM autores WHERE id = %s"
+        cursor.execute(query_autor, (autor_id,))
+        autor = cursor.fetchone()
+        if not autor:
             raise HTTPException(status_code=404, detail="Autor não encontrado")
-        return Autor(**resultado)
+
+        query_livros = """
+            SELECT id, titulo, autor_id, ano_publicacao, genero
+            FROM livros
+            WHERE autor_id = %s
+        """
+        cursor.execute(query_livros, (autor_id,))
+        livros = cursor.fetchall()
+        autor['livros'] = livros
+        return AutorComLivros(**autor)
     finally:
         cursor.close()
         conexao.close()
@@ -100,44 +108,43 @@ def atualizar_autor(autor_id: int, autor_atualizado: Autor):
         cursor.close()
         conexao.close()
 
-
 @app.delete("/autores/{autor_id}")
 def deletar_autor_por_id(autor_id: int):
     conexao = conecta()
     cursor = conexao.cursor()
     try:
+        cursor.execute("SELECT id FROM autores WHERE id = %s", (autor_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Autor não encontrado")
+
         query = "DELETE FROM autores WHERE id = %s"
         cursor.execute(query, (autor_id,))
         conexao.commit()
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Autor não encontrado")
+
         return {"message": "Autor deletado com sucesso"}
     finally:
         cursor.close()
         conexao.close()
 
-
 # CRUD para Livros
-
 @app.post("/livros", response_model=Livro)
 def criar_livro(livro: Livro):
     conexao = conecta()
     cursor = conexao.cursor()
     try:
-        # Verifica se o autor existe
         cursor.execute("SELECT id FROM autores WHERE id = %s", (livro.autor_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Autor não encontrado")
+
         query = "INSERT INTO livros (titulo, autor_id, ano_publicacao, genero) VALUES (%s, %s, %s, %s)"
         valores = (livro.titulo, livro.autor_id, livro.ano_publicacao, livro.genero)
         cursor.execute(query, valores)
         conexao.commit()
-        livro.id = cursor.lastrowid 
+        livro.id = cursor.lastrowid
         return livro
     finally:
         cursor.close()
         conexao.close()
-
 
 @app.get("/livros", response_model=List[Livro])
 def listar_livros():
@@ -151,7 +158,6 @@ def listar_livros():
     finally:
         cursor.close()
         conexao.close()
-
 
 @app.get("/livros/{livro_id}", response_model=Livro)
 def buscar_livro_por_id(livro_id: int):
@@ -167,7 +173,6 @@ def buscar_livro_por_id(livro_id: int):
     finally:
         cursor.close()
         conexao.close()
-
 
 @app.put("/livros/{livro_id}", response_model=Livro)
 def atualizar_livro(livro_id: int, livro_atualizado: Livro):
@@ -185,20 +190,20 @@ def atualizar_livro(livro_id: int, livro_atualizado: Livro):
         cursor.close()
         conexao.close()
 
-
 @app.delete("/livros/{livro_id}")
 def deletar_livro_por_id(livro_id: int):
     conexao = conecta()
     cursor = conexao.cursor()
     try:
+        cursor.execute("SELECT id FROM livros WHERE id = %s", (livro_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Livro não encontrado")
+
         query = "DELETE FROM livros WHERE id = %s"
         cursor.execute(query, (livro_id,))
         conexao.commit()
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Livro não encontrado")
+
         return {"message": "Livro deletado com sucesso"}
     finally:
         cursor.close()
         conexao.close()
-
-
